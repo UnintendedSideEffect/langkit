@@ -24,7 +24,7 @@
    pragma Warnings (Off, "defined after private extension");
    % for e in ctx.entity_types:
       function As_${e.el_type.kwless_raw_name}
-        (Node : ${root_entity.api_name}'Class) return ${e.api_name};
+        (Node : ${root_entity.api_name}'Class) return ${e.api_name}'Class;
    % endfor
    pragma Warnings (On, "defined after private extension");
 
@@ -313,13 +313,15 @@
    -----------------------
 
    % for e in ctx.entity_types:
+      <% rtype = "{}'Class".format(e.api_name) %>
       function As_${e.el_type.kwless_raw_name}
-        (Node : ${root_entity.api_name}'Class) return ${e.api_name} is
+        (Node : ${root_entity.api_name}'Class) return ${rtype} is
       begin
          if Node.Node = null then
-            return No_${e.api_name};
+            return ${rtype} (No_${e.api_name});
          elsif Node.Node.all in ${e.el_type.value_type_name()}'Class then
-            return (Node => Node.Node, E_Info => Node.E_Info);
+            return ${rtype}
+              (${e.api_name}'(Node => Node.Node, E_Info => Node.E_Info));
          else
             raise Constraint_Error with "Invalid type conversion";
          end if;
@@ -495,11 +497,12 @@
    -----------------
 
    function Token_Range
-     (Node : ${root_entity.api_name}'Class)
-      return Token_Iterator is
+     (Node : ${root_entity.api_name}'Class) return Token_Iterator
+   is
+      N : constant ${root_entity.api_name} :=
+         ${root_entity.api_name} (As_${root_entity.api_name} (Node));
    begin
-      return Token_Iterator'(As_${T.root_node.kwless_raw_name} (Node),
-                             Node.Node.Token_End_Index);
+      return Token_Iterator'(N, Node.Node.Token_End_Index);
    end Token_Range;
 
    --------

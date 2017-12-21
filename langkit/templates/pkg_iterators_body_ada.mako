@@ -12,9 +12,12 @@ package body ${ada_lib_name}.Iterators is
    --------------
 
    function Traverse
-     (Root : ${root_entity.api_name}'Class) return Traverse_Iterator is
+     (Root : ${root_entity.api_name}'Class) return Traverse_Iterator
+   is
+      R : constant ${root_entity.api_name} :=
+         ${root_entity.api_name} (As_${root_entity.api_name} (Root));
    begin
-      return Create (As_${root_entity.el_type.kwless_raw_name} (Root));
+      return Create (R);
    end Traverse;
 
    ----------
@@ -133,7 +136,7 @@ package body ${ada_lib_name}.Iterators is
 
    function Get_Parent
      (N : ${root_entity.api_name}) return ${root_entity.api_name}
-   is (Parent (N));
+   is (${root_entity.api_name} (Parent (N)));
 
    ------------------------------------
    -- First_Child_Index_For_Traverse --

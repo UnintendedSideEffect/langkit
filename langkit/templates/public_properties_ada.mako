@@ -16,6 +16,7 @@
       % endif
    % endfor
   ) return ${(property.type.api_name)}
+           ${"'Class" if property.type.is_entity_type else ''}
 </%def>
 
 <%def name="decl(property)">
@@ -127,15 +128,18 @@
       Property_Result := ${property.name}
          ${'({})'.format(', '.join(actuals)) if actuals else ''};
 
-      % if wrap_code:
-         return Result : ${property.type.api_name} := ${wrapped_result}
-         do
-            % for chunk in wrap_code:
-               ${chunk}
-            % endfor
-         end return;
-      % else:
-         return ${wrapped_result};
-      % endif
+      declare
+         Result : ${property.type.api_name} := ${wrapped_result};
+      begin
+         % for chunk in wrap_code:
+            ${chunk}
+         % endfor
+
+         % if property.type.is_entity_type:
+            return ${property.type.api_name}'Class (Result);
+         % else:
+            return Result;
+         % endif
+      end;
    end;
 </%def>
