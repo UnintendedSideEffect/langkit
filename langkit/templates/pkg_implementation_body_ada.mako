@@ -1959,6 +1959,112 @@ package body ${ada_lib_name}.Analysis.Implementation is
       end if;
    end Children_Count;
 
+   Kind_To_All_Children_Count : array (${root_node_kind_name}) of Integer :=
+     (${', \n'.join(
+           '{} => {}'.format(
+              cls.ada_kind_name,
+              (len(cls.get_parse_fields()) if not cls.is_list_type else -1)
+           )
+           for cls in ctx.astnode_types if not cls.abstract)});
+   --  Like Kind_To_Node_Children_Count, but considering this time all kinds of
+   --  children.
+
+   ------------------------
+   -- All_Children_Count --
+   ------------------------
+
+   function All_Children_Count
+     (Node : access ${root_node_value_type}'Class) return Natural
+   is
+      C : Integer := Kind_To_All_Children_Count (Node.Kind);
+   begin
+      if C = -1 then
+         return ${generic_list_type_name} (Node).Count;
+      else
+         return C;
+      end if;
+   end All_Children_Count;
+
+   ---------------
+   -- Get_Child --
+   ---------------
+
+   procedure Get_Child
+     (Node            : access ${root_node_value_type}'Class;
+      Index           : Positive;
+      Index_In_Bounds : out Boolean;
+      Result          : out Child_Type)
+   is
+      K : constant ${root_node_kind_name} := Node.Kind;
+
+      function Create_Child (Token : Token_Index) return Child_Type;
+      --  Create a standalone token wrapped in a Child_Type variant for the
+      --  given token.
+
+      function Create_Child (Token : Token_Index) return Child_Type is
+         use Ada.Strings.Wide_Wide_Unbounded;
+
+         Token_Text : constant Text_Type :=
+            Text (Node.Token (Token));
+      begin
+         return
+           (Kind  => Token_Child,
+            Token => (Text => To_Unbounded_Wide_Wide_String (Token_Text)));
+      end Create_Child;
+
+   begin
+      <%
+        root_type = ctx.root_grammar_class.name
+
+        def get_actions(astnode, node_expr):
+            specific_fields = astnode.get_parse_fields(include_inherited=False)
+
+            result = []
+
+            # Emit only one processing code for all list types: no need to
+            # repeat it multiple times.
+            if astnode.is_generic_list_type:
+                result.append("""
+                    if Index > {node}.Count then
+                        Index_In_Bounds := False;
+                    else
+                        Result := Create_Child ({node}.Nodes (Index));
+                    end if;
+                    return;
+                """.format(node=node_expr))
+            elif astnode.is_list:
+                pass
+
+            # Otherwise, emit code to handle regular fields, when there are
+            # some.
+            elif specific_fields:
+                # Compute the index of the first AST node field we handle here
+                all_fields = astnode.get_parse_fields(include_inherited=True)
+                first_field_index = len(all_fields) - len(specific_fields) + 1
+
+                result.append('case Index is')
+                for i, f in enumerate(specific_fields, first_field_index):
+                    result.append("""
+                        when {} =>
+                            Result := Create_Child ({}.{});
+                            return;
+                    """.format(i, node_expr, f.name))
+                result.append("""
+                        when others => null;
+                    end case;
+                """)
+            return '\n'.join(result)
+      %>
+
+      Index_In_Bounds := True;
+      Result := (Kind => Node_Child, Node => null);
+      ${ctx.generate_actions_for_hierarchy('Node', 'K', get_actions)}
+
+      --  Execution should reach this point iff nothing matched this index, so
+      --  we must be out of bounds.
+      Index_In_Bounds := False;
+   end Get_Child;
+
    ----------------------
    -- Reset_Logic_Vars --
    ----------------------

@@ -12,12 +12,23 @@
 <%
    root_node_array = T.root_node.array
    no_builtins = lambda ts: filter(lambda t: not t.is_builtin(), ts)
+
+   # Compute the list of types that can appear as AST node children. For each,
+   # have a kind name (used to generate an enumerated type), a field name (used
+   # to generate the variant record type) and a type name for the child itself.
+   node_child_types = [
+      ('Node_Child', 'Node',    root_node_type_name),
+      ('Token_Child', 'Token',  'Standalone_Token_Type'),
+      ('Boolean_Child', 'Bool', 'Boolean'),
+   ] + [('{}_Child'.format(e.name), 'Enum_{}'.format(e.name), str(e.name))
+        for e in ctx.enum_types]
 %>
 
 with Ada.Containers;             use Ada.Containers;
 with Ada.Containers.Hashed_Maps;
 with Ada.Strings.Unbounded;      use Ada.Strings.Unbounded;
 with Ada.Strings.Unbounded.Hash;
+with Ada.Strings.Wide_Wide_Unbounded;
 with Ada.Unchecked_Deallocation;
 
 with System;
@@ -75,6 +86,42 @@ package ${ada_lib_name}.Analysis.Implementation is
      (Node : access ${root_node_value_type}'Class) return Text_Type;
    --  Return a short representation of the node, containing just the kind
    --  name and the sloc.
+
+   --------------------------------------
+   -- Generic tree traversal interface --
+   --------------------------------------
+
+   type Standalone_Token_Type is record
+      Text : Ada.Strings.Wide_Wide_Unbounded.Unbounded_Wide_Wide_String;
+   end record;
+   --  Type for token values that are independent of any context (no related
+   --  token data handler, analysis unit, etc.).
+
+   type Child_Kind is (${', '.join(k for k, _, _ in node_child_types)});
+
+   type Child_Type (Kind : Child_Kind := Node_Child) is record
+      case Kind is
+         % for kind, field_name, type_name in node_child_types:
+            when ${kind} => ${field_name} : ${type_name};
+         % endfor
+      end case;
+   end record;
+
+   % for kind, field_name, type_name in node_child_types:
+      ## For convenience, use a formal type that can get any AST node
+      ## subclass.
+      % if type_name == root_node_type_name:
+         function Create_Child
+           (${field_name} : access ${root_node_value_type}'Class)
+            return Child_Type
+         is ((Kind          => ${kind},
+              ${field_name} => ${root_node_type_name} (${field_name})));
+
+      % else:
+         function Create_Child (${field_name} : ${type_name}) return Child_Type
+         is ((Kind => ${kind}, ${field_name} => ${field_name}));
+      % endif
+   % endfor
 
    ----------------
    -- Extensions --
@@ -268,7 +315,8 @@ package ${ada_lib_name}.Analysis.Implementation is
 
    function Children_Count
      (Node : access ${root_node_value_type}'Class) return Natural;
-   --  Return the number of children Node has
+   --  Return the number of children Node has. This considers only children
+   --  which are AST nodes.
 
    function First_Child_Index
      (Node : access ${root_node_value_type}'Class) return Natural;
@@ -283,9 +331,12 @@ package ${ada_lib_name}.Analysis.Implementation is
       Index           : Positive;
       Index_In_Bounds : out Boolean;
       Result          : out ${root_node_type_name});
-   --  Get the Index'th child of Node, storing it into Result. Child indexing
-   --  is 1-based. Store in Index_In_Bounds whether Node had such a child; if
-   --  not, the content of Result is undefined.
+   --  Return the Index'th child of node, storing it into Result. This
+   --  considers only children which are AST nodes.
+   --
+   --  Child indexing is 1-based. Store in Index_In_Bounds whether Node had
+   --  such a child: if not (i.e. Index is out-of-bounds), the content
+   --  of Result is undefined.
 
    function Child
      (Node  : access ${root_node_value_type}'Class;
@@ -299,6 +350,24 @@ package ${ada_lib_name}.Analysis.Implementation is
    --  This is an alternative to the Child/Children_Count pair, useful if you
    --  want the convenience of Ada arrays, and you don't care about the small
    --  performance hit of creating an array.
+
+   function All_Children_Count
+     (Node : access ${root_node_value_type}'Class) return Natural;
+   --  Return the number of children Node has, considering all kinds of
+   --  children: AST nodes, tokens, booleans or enumerations alike.
+
+   procedure Get_Child
+     (Node            : access ${root_node_value_type}'Class;
+      Index           : Positive;
+      Index_In_Bounds : out Boolean;
+      Result          : out Child_Type);
+   --  Return the Index'th child of node, storing it into Result. This
+   --  considers all kinds of children: AST nodes, tokens, booleans or
+   --  enumerations alike.
+   --
+   --  Child indexing is 1-based. Store in Index_In_Bounds whether Node had
+   --  such a child: if not (i.e. Index is out-of-bounds), the content
+   --  of Result is undefined.
 
    function Parents
      (Node         : access ${root_node_value_type}'Class;
