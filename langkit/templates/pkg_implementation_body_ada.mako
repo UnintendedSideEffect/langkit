@@ -1077,6 +1077,75 @@ package body ${ada_lib_name}.Analysis.Implementation is
      (Node : access ${root_node_value_type}'Class) return Natural
    is (Node.Children_Count);
 
+   <%
+      # Content for the Node_To_All_Children_Index_Base array below. Each
+      # list item is a tuple: (AST node, base index).
+      base_table = []
+
+      # Content for the Node_To_All_Children_Index array below
+      index_table = []
+
+      for n in ctx.astnode_types:
+         if n.abstract:
+            continue
+
+         base_table.append((n, len(index_table)))
+
+         # Now fill the "index_table" with indexes for "n"'s AST node children
+         for index, f in enumerate(
+            n.get_parse_fields(include_inherited=True),
+            1
+         ):
+            if f.type.is_ast_node:
+               index_table.append(index)
+   %>
+
+   Node_To_All_Children_Index_Base : constant
+      array (${root_node_kind_name}) of Natural := (
+      % if len(base_table) == 0:
+         1 .. 0 => <>
+      % else:
+         ${', '.join('{} => {}'.format(n.ada_kind_name, base_index)
+                     for n, base_index in base_table)}
+      % endif
+   );
+   --  Associate a base index for the Node_To_All_Children array index for each
+   --  concrete AST node.
+
+   Node_To_All_Children_Index : constant
+      array (Positive range <>) of Positive := (
+      % if len(index_table) == 0:
+         1 .. 0 => <>
+      % elif len(index_table) == 1:
+         1 => ${index_table[0]}
+      % else:
+         ${', '.join(str(i) for i in index_table)}
+      % endif
+   );
+   --  Table to translate node-only-children indexes into all-children indexes.
+   --
+   --  Assuming the following class hirearchy::
+   --
+   --     AST node A (no field)
+   --     AST node B extends A
+   --        F_X : AST node
+   --        F_Y : Boolean
+   --        F_Z : AST node
+   --     AST node C extends A
+   --        F_W : AST node
+   --
+   --  The Node_To_All_Children_Index_Base array will contain::
+   --
+   --     A => 1
+   --     B => 1
+   --     C => 3
+   --
+   --  And this table will contain::
+   --
+   --     Index:               | 1   | 2   | 3   |
+   --     Content:             | 1   | 2   | 1   |
+   --     Corresponding field: | F_X | F_Z | F_W |
+
    ---------------
    -- Get_Child --
    ---------------
@@ -1087,65 +1156,43 @@ package body ${ada_lib_name}.Analysis.Implementation is
       Index_In_Bounds : out Boolean;
       Result          : out ${root_node_type_name})
    is
-      K : constant ${root_node_kind_name} := Node.Kind;
-
+      K     : constant ${root_node_kind_name} := Node.Kind;
+      Child : Child_Type;
    begin
-      <%
-        root_type = ctx.root_grammar_class.name
+      % if ctx.generic_list_type.concrete_subclasses:
+         --  List types only have AST node children, so we can defer work to
+         --  the generic Get_Child procedure with the same index.
+         if K in ${ctx.generic_list_type.ada_kind_range_name} then
+            Node.Get_Child (Index, Index_In_Bounds, Child);
+            Result := (if Index_In_Bounds then Child.Node else null);
+            return;
+         end if;
+      % endif
 
-        def get_actions(astnode, node_expr):
-            specific_fields = astnode.get_parse_fields(
-                lambda f: f.type.is_ast_node,
-                include_inherited=False
-            )
+      --  Use our generated table to look convert our node-only index into an
+      --  all-children index.
+      if Index > Node.Children_Count then
+         Index_In_Bounds := False;
+         Result := null;
 
-            result = []
+      else
+         % if index_table:
+            declare
+               All_Children_Index : constant Positive :=
+                  Node_To_All_Children_Index
+                    (Node_To_All_Children_Index_Base (K) + Index);
+            begin
+               Node.Get_Child (All_Children_Index, Index_In_Bounds, Child);
+               if not Index_In_Bounds or else Child.Kind /= Node_Child then
+                  raise Program_Error;
+               end if;
+               Result := Child.Node;
+            end;
 
-            # Emit only one processing code for all list types: no need to
-            # repeat it multiple times.
-            if astnode.is_generic_list_type:
-                result.append("""
-                    if Index > {node}.Count then
-                        Index_In_Bounds := False;
-                    else
-                        Result := {node}.Nodes (Index);
-                    end if;
-                    return;
-                """.format(node=node_expr))
-            elif astnode.is_list:
-                pass
-
-            # Otherwise, emit code to handle regular fields, when there are
-            # some.
-            elif specific_fields:
-                # Compute the index of the first AST node field we handle here
-                all_fields = astnode.get_parse_fields(
-                    lambda f: f.type.is_ast_node,
-                    include_inherited=True
-                )
-                first_field_index = len(all_fields) - len(specific_fields) + 1
-
-                result.append('case Index is')
-                for i, f in enumerate(specific_fields, first_field_index):
-                    result.append("""
-                        when {} =>
-                            Result := {} ({}.{});
-                            return;
-                    """.format(i, root_type, node_expr, f.name))
-                result.append("""
-                        when others => null;
-                    end case;
-                """)
-            return '\n'.join(result)
-      %>
-
-      Index_In_Bounds := True;
-      Result := null;
-      ${ctx.generate_actions_for_hierarchy('Node', 'K', get_actions)}
-
-      --  Execution should reach this point iff nothing matched this index, so
-      --  we must be out of bounds.
-      Index_In_Bounds := False;
+         % else:
+            raise Program_Error;
+         % endif
+      end if;
    end Get_Child;
 
    -----------
