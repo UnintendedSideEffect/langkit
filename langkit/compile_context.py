@@ -255,6 +255,23 @@ class LibraryEntity(object):
         return '{}.{}'.format(self.unit_fqn, self.entity_name)
 
 
+class ASTNodeChildType(object):
+    """
+    Descriptor for a type that can appear as an AST node child.
+    """
+
+    def __init__(self, enum_name, field_name, type_name):
+        """
+        :param str enum_name: Name of the enumerator that represents this child
+            type.
+        :param str field_name: Name of the field to store child of such a type.
+        :param str type_name: Name of the children type in generated code.
+        """
+        self.enum_name = enum_name
+        self.field_name = field_name
+        self.type_name = type_name
+
+
 class CompileCtx(object):
     """State holder for native code emission."""
 
@@ -660,6 +677,13 @@ class CompileCtx(object):
         :type: dict[(str, str), list[(str, bool)]
         """
 
+        self.astnode_child_types = None
+        """
+        List of types that appear as AST node children.
+
+        :type: list[ASTNodeChildType]
+        """
+
     def add_with_clause(self, from_pkg, source_kind, to_pkg, use_clause=False):
         """
         Add a WITH clause for `to_pkg` in the `source_kind` part of the
@@ -806,6 +830,19 @@ class CompileCtx(object):
         # We need a hash function for the metadata structure as the
         # Langkit_Support.Lexical_Env generic package requires it.
         T.env_md.require_hash_function()
+
+        self.astnode_child_types = [
+            ASTNodeChildType('Node_Child', 'Node',
+                             T.root_node.name.camel_with_underscores),
+            ASTNodeChildType('Token_Child', 'Token', 'Standalone_Token_Type'),
+            ASTNodeChildType('Boolean_Child', 'Bool', 'Boolean')
+        ] + [
+            ASTNodeChildType(
+                '{}_Child'.format(e.name.camel_with_underscores),
+                'Enum_{}'.format(e.name.camel_with_underscores),
+                e.name.camel_with_underscores
+            ) for e in self.enum_types
+        ]
 
     def check_concrete_subclasses(self, astnode):
         """

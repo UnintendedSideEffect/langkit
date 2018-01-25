@@ -12,16 +12,6 @@
 <%
    root_node_array = T.root_node.array
    no_builtins = lambda ts: filter(lambda t: not t.is_builtin(), ts)
-
-   # Compute the list of types that can appear as AST node children. For each,
-   # have a kind name (used to generate an enumerated type), a field name (used
-   # to generate the variant record type) and a type name for the child itself.
-   node_child_types = [
-      ('Node_Child', 'Node',    root_node_type_name),
-      ('Token_Child', 'Token',  'Standalone_Token_Type'),
-      ('Boolean_Child', 'Bool', 'Boolean'),
-   ] + [('{}_Child'.format(e.name), 'Enum_{}'.format(e.name), str(e.name))
-        for e in ctx.enum_types]
 %>
 
 with Ada.Containers;             use Ada.Containers;
@@ -97,29 +87,29 @@ package ${ada_lib_name}.Analysis.Implementation is
    --  Type for token values that are independent of any context (no related
    --  token data handler, analysis unit, etc.).
 
-   type Child_Kind is (${', '.join(k for k, _, _ in node_child_types)});
+   type Child_Kind is
+     (${', '.join(t.enum_name for t in ctx.astnode_child_types)});
 
    type Child_Type (Kind : Child_Kind := Node_Child) is record
       case Kind is
-         % for kind, field_name, type_name in node_child_types:
-            when ${kind} => ${field_name} : ${type_name};
+         % for t in ctx.astnode_child_types:
+            when ${t.enum_name} => ${t.field_name} : ${t.type_name};
          % endfor
       end case;
    end record;
 
-   % for kind, field_name, type_name in node_child_types:
+   % for t in ctx.astnode_child_types:
       ## For convenience, use a formal type that can get any AST node
       ## subclass.
-      % if type_name == root_node_type_name:
-         function Create_Child
-           (${field_name} : access ${root_node_value_type}'Class)
-            return Child_Type
-         is ((Kind          => ${kind},
-              ${field_name} => ${root_node_type_name} (${field_name})));
+      % if t.type_name == root_node_type_name.camel_with_underscores:
+         procedure Create_Child
+           (${t.field_name} : access ${root_node_value_type}'Class;
+            Child           : out Child_Type);
 
       % else:
-         function Create_Child (${field_name} : ${type_name}) return Child_Type
-         is ((Kind => ${kind}, ${field_name} => ${field_name}));
+         procedure Create_Child
+           (${t.field_name} : ${t.type_name};
+            Child           : out Child_Type);
       % endif
    % endfor
 

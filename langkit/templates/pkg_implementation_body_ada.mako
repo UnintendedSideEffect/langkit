@@ -74,6 +74,36 @@ package body ${ada_lib_name}.Analysis.Implementation is
 
    procedure Destroy (Env : in out Lexical_Env_Access);
 
+   % for t in ctx.astnode_child_types:
+      % if t.type_name == root_node_type_name.camel_with_underscores:
+         ------------------
+         -- Create_Child --
+         ------------------
+
+         procedure Create_Child
+           (${t.field_name} : access ${root_node_value_type}'Class;
+            Child           : out Child_Type) is
+         begin
+            Child :=
+              (Kind            => ${t.enum_name},
+               ${t.field_name} => ${root_node_type_name} (${t.field_name}));
+         end Create_Child;
+
+      % else:
+         ------------------
+         -- Create_Child --
+         ------------------
+
+         procedure Create_Child
+           (${t.field_name} : ${t.type_name};
+            Child           : out Child_Type) is
+         begin
+            Child := (Kind            => ${t.enum_name},
+                      ${t.field_name} => ${t.field_name});
+         end Create_Child;
+      % endif
+   % endfor
+
    ------------------------------
    -- Register_Destroyable_Gen --
    ------------------------------
@@ -2044,17 +2074,17 @@ package body ${ada_lib_name}.Analysis.Implementation is
    is
       K : constant ${root_node_kind_name} := Node.Kind;
 
-      function Create_Child (Token : Token_Index) return Child_Type;
+      procedure Create_Child (Token : Token_Index; Child : out Child_Type);
       --  Create a standalone token wrapped in a Child_Type variant for the
       --  given token.
 
-      function Create_Child (Token : Token_Index) return Child_Type is
+      procedure Create_Child (Token : Token_Index; Child : out Child_Type) is
          use Ada.Strings.Wide_Wide_Unbounded;
 
          Token_Text : constant Text_Type :=
             Text (Node.Token (Token));
       begin
-         return
+         Child :=
            (Kind  => Token_Child,
             Token => (Text => To_Unbounded_Wide_Wide_String (Token_Text)));
       end Create_Child;
@@ -2075,7 +2105,7 @@ package body ${ada_lib_name}.Analysis.Implementation is
                     if Index > {node}.Count then
                         Index_In_Bounds := False;
                     else
-                        Result := Create_Child ({node}.Nodes (Index));
+                        Create_Child ({node}.Nodes (Index), Result);
                     end if;
                     return;
                 """.format(node=node_expr))
@@ -2093,7 +2123,7 @@ package body ${ada_lib_name}.Analysis.Implementation is
                 for i, f in enumerate(specific_fields, first_field_index):
                     result.append("""
                         when {} =>
-                            Result := Create_Child ({}.{});
+                            Create_Child ({}.{}, Result);
                             return;
                     """.format(i, node_expr, f.name))
                 result.append("""
